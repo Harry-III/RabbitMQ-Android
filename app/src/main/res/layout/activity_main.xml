@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <EditText android:id="@+id/et_content"
+              android:layout_width="match_parent"
+              android:layout_height="wrap_content"/>
+
+    <LinearLayout android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:gravity="center_vertical"
+                  android:orientation="horizontal">
+
+        <Button android:id="@+id/btn_send_queue"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:onClick="sendQueue"
+                android:text="发送队列"/>
+        <Button android:id="@+id/btn_send_routing_key"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:onClick="sendRouting"
+                android:text="路由选择"/>
+
+        <Button android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:onClick="listenQueue"
+                android:text="监听队列"/>
+        <Button android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:onClick="listenRouting"
+                android:text="监听路由"/>
+
+
+    </LinearLayout>
+
+
+    <TextView
+        android:id="@+id/tv_show_message"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:minHeight="300dp"
+        android:scrollbars="vertical"/>
+</LinearLayout>
