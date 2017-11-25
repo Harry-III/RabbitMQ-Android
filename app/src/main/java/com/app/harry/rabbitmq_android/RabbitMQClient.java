@@ -240,6 +240,7 @@ public class RabbitMQClient {
                 }
             }
         }
+        channelMap.clear();
         if (connection != null && connection.isOpen()) {
             try {
                 connection.close();

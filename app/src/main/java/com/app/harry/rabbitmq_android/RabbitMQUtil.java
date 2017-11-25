@@ -13,12 +13,14 @@ import java.util.concurrent.TimeoutException;
  * Created by Harry on 2017/8/17
  */
 public class RabbitMQUtil {
-    private final String TAG = "RabbitMQ";
-
     private static RabbitMQUtil singleton;
+    private final String TAG = "RabbitMQ";
     private final RabbitMQClient rabbitMQ;
     private final Executor executor;
-
+    private boolean isConnectedOne = true;   //连接成功一次就好
+    private boolean isFirstTimeOne = true;   //监听只需要设置一次就好
+    private boolean isConnectedTwo = true;   //连接成功一次就好
+    private boolean isFirstTimeTwo = true;   //监听只需要设置一次就好
 
     public RabbitMQUtil() {
         rabbitMQ = RabbitMQClient.getInstance();
@@ -83,9 +85,6 @@ public class RabbitMQUtil {
         });
     }
 
-    private boolean isConnectedOne = true;   //连接成功一次就好
-    private boolean isFirstTimeOne = true;   //监听只需要设置一次就好
-
     public void receiveQueueMessage(final String queueName, final ReceiveMessageListener listener) {
         if (!isFirstTimeOne) {
             return;
@@ -110,7 +109,7 @@ public class RabbitMQUtil {
                         isConnectedOne = true;
                         e.printStackTrace();
                         SystemClock.sleep(5000);
-                        Log.d("asdf", "未连接到queueMessage");
+                        Log.d(TAG, "未连接到queueMessage");
                     }
                 }
             }
@@ -136,9 +135,6 @@ public class RabbitMQUtil {
             }
         });
     }
-
-    private boolean isConnectedTwo = true;   //连接成功一次就好
-    private boolean isFirstTimeTwo = true;   //监听只需要设置一次就好
 
     public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final ReceiveMessageListener listener) {
         if (!isFirstTimeTwo) {
@@ -176,8 +172,11 @@ public class RabbitMQUtil {
      */
     public void close() {
         rabbitMQ.close();
-        isConnectedOne = false;
-        isConnectedTwo = false;
+        isConnectedOne = true;
+        isConnectedTwo = true;
+        isFirstTimeOne = true;
+        isFirstTimeTwo = true;
+        Log.d(TAG, "关闭推送");
     }
 
     public interface ReceiveMessageListener {

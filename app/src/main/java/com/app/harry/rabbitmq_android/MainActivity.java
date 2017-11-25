@@ -33,8 +33,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
-        super.onDestroy();
         RabbitMQUtil.getInstance().close();
+        super.onDestroy();
     }
 
     public void sendQueue(View view) {
@@ -83,10 +83,8 @@ public class MainActivity extends AppCompatActivity {
                     public void run() {
                         if (isSuccess) {
                             sb.append("发送routing消息：").append(message).append("\n");
-
                             contentEt.setText("");
                             showMessageTv.setText(sb);
-
 
                         } else {
                             Toast.makeText(MainActivity.this, "发送消息失败，请检查网络后稍后再试！！！", Toast.LENGTH_SHORT).show();
