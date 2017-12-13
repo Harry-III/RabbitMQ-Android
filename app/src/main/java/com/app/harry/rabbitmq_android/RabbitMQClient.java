@@ -5,6 +5,7 @@ import android.text.TextUtils;
 import android.util.Log;
 
 import com.rabbitmq.client.AMQP;
+import com.rabbitmq.client.AlreadyClosedException;
 import com.rabbitmq.client.Channel;
 import com.rabbitmq.client.Connection;
 import com.rabbitmq.client.ConnectionFactory;
@@ -24,10 +25,10 @@ public class RabbitMQClient {
     /**
      * 需要自己设置，这里给出的只是样本
      */
-    public static final String SERVICE_HOST_IP = "127.0.0.1";
-    public static final int SERVICE_PORT = 5672;
-    public static final String SERVICE_USERNAME = "admin";
-    public static final String SERVICE_PASSWORD = "admin";
+    private static final String SERVICE_HOST_IP = "127.0.0.1";
+    private static final int SERVICE_PORT = 5672;
+    private static final String SERVICE_USERNAME = "admin";
+    private static final String SERVICE_PASSWORD = "admin";
     private final String EXCHANGE_NAME = "exchangeName";
     private final String EXCHANGE_TYPE = "topic";   //四种类型，fanout, direct , topic ,headers
 
@@ -42,9 +43,8 @@ public class RabbitMQClient {
 
     public RabbitMQClient() {
         /**
-         * 创建RabbitMQ的工厂以及设置条件
+         * 配置连接
          */
-
         factory = new ConnectionFactory();
 
         factory.setHost(SERVICE_HOST_IP);
@@ -52,7 +52,8 @@ public class RabbitMQClient {
         factory.setUsername(SERVICE_USERNAME);
         factory.setPassword(SERVICE_PASSWORD);
 
-        factory.setAutomaticRecoveryEnabled(true);   //恢复连接
+        factory.setAutomaticRecoveryEnabled(true);   //恢复连接，通道
+        factory.setTopologyRecoveryEnabled(true);    //恢复通道中 装换器，队列，绑定关系等
         factory.setNetworkRecoveryInterval(5000);   //恢复连接间隔，默认5秒
     }
 
@@ -71,10 +72,11 @@ public class RabbitMQClient {
      * first
      * 不定义装换器（默认匿名装换器），发送消息到指定队列中
      */
-    public void sendQueueMessage(String message, String queueName) throws IOException, TimeoutException {
+    public void sendQueueMessage(String message, String queueName) throws IOException, TimeoutException, AlreadyClosedException {
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
+
         if (!channelMap.containsKey(FLAG_SEND + queueName)) {
             Channel channel = connection.createChannel();
             channel.queueDeclare(queueName, false, false, false, null);
@@ -82,14 +84,14 @@ public class RabbitMQClient {
         }
 
         channelMap.get(FLAG_SEND + queueName).basicPublish("", queueName, null, message.getBytes());
-        Log.d(TAG, queueName + "发送消息=====" + message);
+        Log.d(TAG, "队列-" + queueName + "-发送消息=====" + message);
     }
 
     /**
      * second
      * 自定义默认装换器名称和类型，不指定队列，消息根据routingkey路由选择队列（fanout类型装换器例外，发送到绑定该装换器的所有队列中）
      */
-    public void sendRoutingKeyMessage(String message, String routingkey) throws IOException, TimeoutException {
+    public void sendRoutingKeyMessage(String message, String routingkey) throws IOException, TimeoutException, AlreadyClosedException {
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
@@ -99,9 +101,13 @@ public class RabbitMQClient {
             channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
             channelMap.put(FLAG_SEND + routingkey, channel);
         }
-
-        channelMap.get(FLAG_SEND + routingkey).basicPublish(EXCHANGE_NAME, routingkey, null, message.getBytes());
-        Log.d(TAG, routingkey + "路由发送消息" + message);
+        AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()    //设置消息属性
+                .contentType("text/plain")
+                .deliveryMode(2)
+                .priority(1)
+                .build();
+        channelMap.get(FLAG_SEND + routingkey).basicPublish(EXCHANGE_NAME, routingkey, props, message.getBytes());
+        Log.d(TAG, "路由-" + routingkey + "-发送消息=====" + message);
     }
 
     /**
@@ -109,7 +115,7 @@ public class RabbitMQClient {
      * 自定义装换器名称和类型，指定队列，消息根据routingkey路由选择队列（fanout类型装换器例外，发送到绑定该装换器的所有队列中）
      */
     public void sendQueueRoutingKeyMessage(String message, String routingKey, @NonNull String exchangeName,
-                                           String exchangeType) throws IOException, TimeoutException {
+                                           String exchangeType) throws IOException, TimeoutException, AlreadyClosedException {
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
@@ -124,7 +130,7 @@ public class RabbitMQClient {
         }
 
         channelMap.get(FLAG_SEND + routingKey + exchangeType).basicPublish(exchangeName, routingKey, null, message.getBytes());
-        Log.d(TAG, routingKey + "路由发送消息" + message);
+        Log.d(TAG, "路由-" + routingKey + "-发送消息=====" + message);
     }
 
     /**
@@ -132,13 +138,14 @@ public class RabbitMQClient {
      * 不定义装换器（默认匿名装换器），指定队列，获取实时和缓存在队列中的消息
      */
     public void receiveQueueMessage(final String queueName, final ReceiveMessageListener listener)
-            throws IOException, TimeoutException {
+            throws IOException, TimeoutException, AlreadyClosedException {
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
 
         if (!channelMap.containsKey(FLAG_RECEIVE + queueName)) {
             final Channel channel = connection.createChannel();
+
             channel.queueDeclare(queueName, false, false, false, null);
 
             channel.basicConsume(queueName, false, new DefaultConsumer(channel) {
@@ -150,7 +157,7 @@ public class RabbitMQClient {
                     if (listener != null) {
                         listener.receive(message);
                     }
-                    Log.d(TAG, queueName + "接受消息->" + message);
+                    Log.d(TAG, "队列-" + queueName + "-接受消息---->" + message);
                     channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
                 }
             });
@@ -163,7 +170,7 @@ public class RabbitMQClient {
      * 自定义默认装换器名称和类型，不指定队列，监听符合routingKey的消息，只能获取实时消息
      */
     public void receiveRoutingKeyMessage(final String routingKey, final ReceiveMessageListener listener)
-            throws IOException, TimeoutException {
+            throws IOException, TimeoutException, AlreadyClosedException {
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
@@ -184,7 +191,7 @@ public class RabbitMQClient {
                     if (listener != null) {
                         listener.receive(message);
                     }
-                    Log.d(TAG, routingKey + "接受消息->" + message);
+                    Log.d(TAG, "路由-" + routingKey + "-接受消息---->" + message);
                     channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
                 }
             });
@@ -196,8 +203,8 @@ public class RabbitMQClient {
      * 对应发送：second,third
      * 自定义默认装换器名称和类型，自定义队列，监听符合routingKey的消息，获取实时和缓存在队列中的消息
      */
-    public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey,
-                                              final ReceiveMessageListener listener) throws IOException, TimeoutException {
+    public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final ReceiveMessageListener listener)
+            throws IOException, TimeoutException, AlreadyClosedException {
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
@@ -218,13 +225,12 @@ public class RabbitMQClient {
                     if (listener != null) {
                         listener.receive(message);
                     }
-                    Log.d(TAG, routingKey + queueName + "接受消息->" + message);
+                    Log.d(TAG, "路由-" + routingKey + "-" + queueName + "-接受消息---->" + message);
                     channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
                 }
             });
             channelMap.put(FLAG_RECEIVE + routingKey + queueName, channel);
         }
-
     }
 
     /**
