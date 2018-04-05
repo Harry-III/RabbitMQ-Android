@@ -30,7 +30,7 @@ public class MainActivity extends AppCompatActivity {
         showMessageTv = findViewById(R.id.tv_show_message);
         showMessageTv.setMovementMethod(ScrollingMovementMethod.getInstance());
 
-        RabbitMQUtil.initService("127.0.0.1", 5671, "admin", "admin");
+        RabbitMQUtil.initService("192.168.2.121", 5672, "ai", "ai");
         RabbitMQUtil.initExchange("test", "topic");
     }
 

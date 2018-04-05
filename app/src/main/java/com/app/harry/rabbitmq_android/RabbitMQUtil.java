@@ -114,7 +114,7 @@ public class RabbitMQUtil {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (true) {
+                while (singleton != null) {
                     try {
                         rabbitMQ.receiveQueueMessage(queueName, new RabbitMQClient.ResponseListener() {
 
@@ -139,7 +139,7 @@ public class RabbitMQUtil {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (true) {
+                while (singleton != null) {
                     try {
                         rabbitMQ.receiveRoutingKeyMessage(routingKey, new RabbitMQClient.ResponseListener() {
                             @Override
@@ -162,7 +162,7 @@ public class RabbitMQUtil {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (true) {
+                while (singleton != null) {
                     try {
                         rabbitMQ.receiveQueueRoutingKeyMessage(queueName, routingKey, new RabbitMQClient.ResponseListener() {
                             @Override
@@ -189,7 +189,7 @@ public class RabbitMQUtil {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (true) {
+                while (singleton != null) {
                     try {
                         rabbitMQ.receiveQueueRoutingKeyMessage(queueName, routingKey, exchangeName, exchangeType, new RabbitMQClient.ResponseListener() {
                             @Override
@@ -217,7 +217,7 @@ public class RabbitMQUtil {
      */
     public void close() {
         rabbitMQ.close();
-        executor.shutdown();
+        executor.shutdownNow();
         singleton = null;
         Log.d(TAG, "关闭RabbitMQ");
     }
@@ -229,6 +229,5 @@ public class RabbitMQUtil {
     public interface SendMessageListener {
         void sendMessage(boolean isSuccess);
     }
-
-
+    
 }

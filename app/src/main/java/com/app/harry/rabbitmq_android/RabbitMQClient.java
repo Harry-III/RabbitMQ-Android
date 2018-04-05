@@ -165,7 +165,7 @@ public class RabbitMQClient {
      */
     public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final ResponseListener listener)
             throws IOException, TimeoutException, AlreadyClosedException {
-        if (TextUtils.isEmpty(EXCHANGE_NAME) && !exchangeTypeList.contains(EXCHANGE_TYPE)) {
+        if (TextUtils.isEmpty(EXCHANGE_NAME) || !exchangeTypeList.contains(EXCHANGE_TYPE)) {
             throw new NullPointerException("请先设置默认转换器名称和正确类型，否则请调用指定转换器名称和类型的方法");
         }
         receiveQueueRoutingKeyMessage(queueName, routingKey, EXCHANGE_NAME, EXCHANGE_TYPE, listener);
@@ -178,7 +178,7 @@ public class RabbitMQClient {
     public void receiveQueueRoutingKeyMessage(String queueName, final String routingKey, String exchangeName, String exchangeType, final ResponseListener listener)
             throws IOException, TimeoutException, AlreadyClosedException {
         if (!TextUtils.isEmpty(routingKey)) {
-            if (TextUtils.isEmpty(exchangeName) || exchangeTypeList.contains(exchangeType)) {
+            if (TextUtils.isEmpty(exchangeName) || !exchangeTypeList.contains(exchangeType)) {
                 throw new NullPointerException("转换器名称不能为空并且转换器类型必须正确");
             }
         }
