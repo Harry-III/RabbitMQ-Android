@@ -4,8 +4,10 @@ import android.os.SystemClock;
 import android.support.annotation.NonNull;
 import android.util.Log;
 
+import com.rabbitmq.client.AlreadyClosedException;
+
 import java.io.IOException;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeoutException;
 
@@ -14,15 +16,13 @@ import java.util.concurrent.TimeoutException;
  */
 public class RabbitMQUtil {
     private final String TAG = "RabbitMQ";
-
     private static RabbitMQUtil singleton;
-    private final RabbitMQClient rabbitMQ;
-    private final Executor executor;
-
+    private RabbitMQClient rabbitMQ;
+    private ExecutorService executor;
 
     public RabbitMQUtil() {
         rabbitMQ = RabbitMQClient.getInstance();
-        executor = Executors.newFixedThreadPool(3);
+        executor = Executors.newSingleThreadExecutor();  //根据项目需要设置常用线程个数
     }
 
     public static RabbitMQUtil getInstance() {
@@ -43,7 +43,7 @@ public class RabbitMQUtil {
                 try {
                     rabbitMQ.sendQueueMessage(message, queueName);
                     if (listener != null) listener.sendMessage(true);
-                } catch (IOException | TimeoutException e) {
+                } catch (IOException | TimeoutException | AlreadyClosedException e) {
                     e.printStackTrace();
                     if (listener != null) listener.sendMessage(false);
                 }
@@ -59,7 +59,7 @@ public class RabbitMQUtil {
                 try {
                     rabbitMQ.sendRoutingKeyMessage(message, routingKey);
                     if (listener != null) listener.sendMessage(true);
-                } catch (IOException | TimeoutException e) {
+                } catch (IOException | TimeoutException | AlreadyClosedException e) {
                     e.printStackTrace();
                     if (listener != null) listener.sendMessage(false);
                 }
@@ -73,9 +73,10 @@ public class RabbitMQUtil {
             @Override
             public void run() {
                 try {
+                    // FIXME: 2017/12/13 不明白为什么发送消息是在线程池中进行，然后下一步是在该线程中执行？怎么可以返回结果呢
                     rabbitMQ.sendQueueRoutingKeyMessage(message, routingKey, exchangeName, exchangeType);
                     if (listener != null) listener.sendMessage(true);
-                } catch (IOException | TimeoutException e) {
+                } catch (IOException | TimeoutException | AlreadyClosedException e) {
                     e.printStackTrace();
                     if (listener != null) listener.sendMessage(false);
                 }
@@ -83,19 +84,11 @@ public class RabbitMQUtil {
         });
     }
 
-    private boolean isConnectedOne = true;   //连接成功一次就好
-    private boolean isFirstTimeOne = true;   //监听只需要设置一次就好
-
     public void receiveQueueMessage(final String queueName, final ReceiveMessageListener listener) {
-        if (!isFirstTimeOne) {
-            return;
-        }
-        isFirstTimeOne = false;
-
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (isConnectedOne) {
+                while (true) {
                     try {
                         rabbitMQ.receiveQueueMessage(queueName, new RabbitMQClient.ReceiveMessageListener() {
 
@@ -105,12 +98,11 @@ public class RabbitMQUtil {
                             }
 
                         });
-                        isConnectedOne = false;
-                    } catch (IOException | TimeoutException e) {
-                        isConnectedOne = true;
+                        break;
+                    } catch (IOException | TimeoutException | AlreadyClosedException e) {
                         e.printStackTrace();
+                        Log.d(TAG, "未连接到-" + queueName + "-----5秒后自动重连");
                         SystemClock.sleep(5000);
-                        Log.d("asdf", "未连接到queueMessage");
                     }
                 }
             }
@@ -121,7 +113,7 @@ public class RabbitMQUtil {
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (!isConnectedOne) {
+                while (true) {
                     try {
                         rabbitMQ.receiveRoutingKeyMessage(routingKey, new RabbitMQClient.ReceiveMessageListener() {
                             @Override
@@ -129,26 +121,22 @@ public class RabbitMQUtil {
                                 if (listener != null) listener.receiveMessage(message);
                             }
                         });
-                    } catch (IOException | TimeoutException e) {
+                        break;
+                    } catch (IOException | TimeoutException | AlreadyClosedException e) {
                         e.printStackTrace();
+                        Log.d(TAG, "未连接到-" + routingKey + "------5秒后自动重连");
+                        SystemClock.sleep(5000);  //等待五秒
                     }
                 }
             }
         });
     }
 
-    private boolean isConnectedTwo = true;   //连接成功一次就好
-    private boolean isFirstTimeTwo = true;   //监听只需要设置一次就好
-
     public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final ReceiveMessageListener listener) {
-        if (!isFirstTimeTwo) {
-            return;
-        }
-        isFirstTimeTwo = false;
         executor.execute(new Runnable() {
             @Override
             public void run() {
-                while (isConnectedTwo) {    //只有第一次连接才需要自己手动连接，后面系统会自动恢复连接
+                while (true) {
                     try {
                         rabbitMQ.receiveQueueRoutingKeyMessage(queueName, routingKey, new RabbitMQClient.ReceiveMessageListener() {
                             @Override
@@ -157,12 +145,11 @@ public class RabbitMQUtil {
                             }
 
                         });
-                        isConnectedTwo = false;
-                    } catch (IOException | TimeoutException e) {
-                        isConnectedTwo = true;
+                        break;
+                    } catch (IOException | TimeoutException | AlreadyClosedException e) {
                         e.printStackTrace();
-                        SystemClock.sleep(5000);  //等待五秒在连接
-                        Log.d(TAG, "未连接到routingkey");
+                        Log.d(TAG, "未连接到-" + routingKey + "------5秒后自动重连");
+                        SystemClock.sleep(5000);  //等待五秒
                     }
                 }
 
@@ -176,8 +163,9 @@ public class RabbitMQUtil {
      */
     public void close() {
         rabbitMQ.close();
-        isConnectedOne = false;
-        isConnectedTwo = false;
+        executor.shutdown();
+        singleton = null;
+        Log.d(TAG, "关闭RabbitMQ");
     }
 
     public interface ReceiveMessageListener {
