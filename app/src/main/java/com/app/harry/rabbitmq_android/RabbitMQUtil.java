@@ -2,6 +2,7 @@ package com.app.harry.rabbitmq_android;
 
 import android.os.SystemClock;
 import android.support.annotation.NonNull;
+import android.text.TextUtils;
 import android.util.Log;
 
 import com.rabbitmq.client.AlreadyClosedException;
@@ -20,7 +21,32 @@ public class RabbitMQUtil {
     private RabbitMQClient rabbitMQ;
     private ExecutorService executor;
 
-    public RabbitMQUtil() {
+    /**
+     * 建议：
+     * 在application中关闭或者在结束工作时关闭
+     */
+    public static void initService(String hostIp, int port, String username, String password) {
+        RabbitMQClient.SERVICE_HOST_IP = hostIp;
+        RabbitMQClient.SERVICE_PORT = port;
+        RabbitMQClient.SERVICE_USERNAME = username;
+        RabbitMQClient.SERVICE_PASSWORD = password;
+    }
+
+    public static void initExchange(@NonNull String name, String type) {
+        if (!TextUtils.isEmpty(name)) {
+            RabbitMQClient.EXCHANGE_NAME = name;
+        } else {
+            throw new NullPointerException("转换器名称不能为空");
+        }
+        if ("fanout".equals(type) || "direct".equals(type) || "topic".equals(type) || "headers".equals(type)) {
+            RabbitMQClient.EXCHANGE_TYPE = type;
+        } else {
+            throw new NullPointerException("转换器类型不正确");
+        }
+    }
+
+
+    private RabbitMQUtil() {
         rabbitMQ = RabbitMQClient.getInstance();
         executor = Executors.newSingleThreadExecutor();  //根据项目需要设置常用线程个数
     }
@@ -90,7 +116,7 @@ public class RabbitMQUtil {
             public void run() {
                 while (true) {
                     try {
-                        rabbitMQ.receiveQueueMessage(queueName, new RabbitMQClient.ReceiveMessageListener() {
+                        rabbitMQ.receiveQueueMessage(queueName, new RabbitMQClient.ResponseListener() {
 
                             @Override
                             public void receive(String message) {
@@ -115,7 +141,7 @@ public class RabbitMQUtil {
             public void run() {
                 while (true) {
                     try {
-                        rabbitMQ.receiveRoutingKeyMessage(routingKey, new RabbitMQClient.ReceiveMessageListener() {
+                        rabbitMQ.receiveRoutingKeyMessage(routingKey, new RabbitMQClient.ResponseListener() {
                             @Override
                             public void receive(String message) {
                                 if (listener != null) listener.receiveMessage(message);
@@ -138,7 +164,34 @@ public class RabbitMQUtil {
             public void run() {
                 while (true) {
                     try {
-                        rabbitMQ.receiveQueueRoutingKeyMessage(queueName, routingKey, new RabbitMQClient.ReceiveMessageListener() {
+                        rabbitMQ.receiveQueueRoutingKeyMessage(queueName, routingKey, new RabbitMQClient.ResponseListener() {
+                            @Override
+                            public void receive(String message) {
+                                if (listener != null) listener.receiveMessage(message);
+                            }
+
+                        });
+                        break;
+                    } catch (IOException | TimeoutException | AlreadyClosedException e) {
+                        e.printStackTrace();
+                        Log.d(TAG, "未连接到-" + routingKey + "------5秒后自动重连");
+                        SystemClock.sleep(5000);  //等待五秒
+                    }
+                }
+
+            }
+        });
+
+    }
+
+    public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final String exchangeName,
+                                              final String exchangeType, final ReceiveMessageListener listener) {
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    try {
+                        rabbitMQ.receiveQueueRoutingKeyMessage(queueName, routingKey, exchangeName, exchangeType, new RabbitMQClient.ResponseListener() {
                             @Override
                             public void receive(String message) {
                                 if (listener != null) listener.receiveMessage(message);
@@ -159,6 +212,7 @@ public class RabbitMQUtil {
     }
 
     /**
+     * 建议：
      * 在application中关闭或者在结束工作时关闭
      */
     public void close() {

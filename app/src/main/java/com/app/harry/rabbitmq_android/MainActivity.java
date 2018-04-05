@@ -26,9 +26,12 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        contentEt = (EditText) findViewById(R.id.et_content);
-        showMessageTv = (TextView) findViewById(R.id.tv_show_message);
+        contentEt = findViewById(R.id.et_content);
+        showMessageTv = findViewById(R.id.tv_show_message);
         showMessageTv.setMovementMethod(ScrollingMovementMethod.getInstance());
+
+        RabbitMQUtil.initService("127.0.0.1", 5671, "admin", "admin");
+        RabbitMQUtil.initExchange("test", "topic");
     }
 
     @Override
