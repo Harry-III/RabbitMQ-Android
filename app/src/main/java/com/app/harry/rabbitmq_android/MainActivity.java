@@ -114,7 +114,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     public void listenRouting(View view) {
-        RabbitMQUtil.getInstance().receiveQueueRoutingKeyMessage(receiveQueueTwo, receiveRoutingKey, new RabbitMQUtil.ReceiveMessageListener() {
+        RabbitMQUtil.getInstance().receiveRoutingKeyMessage(receiveRoutingKey, new RabbitMQUtil.ReceiveMessageListener() {
             @Override
             public void receiveMessage(String message) {
                 sb.append("收到了routing消息：").append(message).append("\n");
