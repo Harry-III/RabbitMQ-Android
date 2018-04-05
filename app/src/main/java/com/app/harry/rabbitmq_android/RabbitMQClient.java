@@ -99,25 +99,10 @@ public class RabbitMQClient {
      * 自定义默认转换器名称和类型，不指定队列，消息根据routingkey路由选择队列（fanout类型转换器例外，发送到绑定该转换器的所有队列中）
      */
     public void sendRoutingKeyMessage(String message, String routingkey) throws IOException, TimeoutException, AlreadyClosedException {
-        if (connection == null || !connection.isOpen()) {
-            connection = factory.newConnection();
+        if (TextUtils.isEmpty(EXCHANGE_NAME) && !exchangeTypeList.contains(EXCHANGE_TYPE)) {
+            throw new NullPointerException("请先设置默认转换器名称和正确类型，否则请调用指定转换器名称和类型的方法");
         }
-
-        if (!channelMap.containsKey(FLAG_SEND + routingkey)) {
-            Channel channel = connection.createChannel();
-            if (TextUtils.isEmpty(EXCHANGE_NAME) && !exchangeTypeList.contains(EXCHANGE_TYPE)) {
-                throw new NullPointerException("请先设置默认转换器名称和正确类型，否则请调用指定转换器名称和类型的方法");
-            }
-            channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
-            channelMap.put(FLAG_SEND + routingkey, channel);
-        }
-        AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()    //设置消息属性
-                .contentType("text/plain")
-                .deliveryMode(2)
-                .priority(1)
-                .build();
-        channelMap.get(FLAG_SEND + routingkey).basicPublish(EXCHANGE_NAME, routingkey, props, message.getBytes());
-        Log.d(TAG, "路由-" + routingkey + "-发送消息=====" + message);
+        sendQueueRoutingKeyMessage(message, routingkey, EXCHANGE_NAME, EXCHANGE_TYPE);
     }
 
     /**
@@ -137,9 +122,16 @@ public class RabbitMQClient {
             } else {
                 channel.queueDeclare(routingKey, false, false, false, null);
             }
+            channelMap.put(FLAG_SEND + routingKey + exchangeType, channel);
         }
 
-        channelMap.get(FLAG_SEND + routingKey + exchangeType).basicPublish(exchangeName, routingKey, null, message.getBytes());
+        AMQP.BasicProperties props = new AMQP.BasicProperties.Builder()    //设置消息属性
+                .contentType("text/plain")
+                .deliveryMode(2)
+                .priority(1)
+                .build();
+
+        channelMap.get(FLAG_SEND + routingKey + exchangeType).basicPublish(exchangeName, routingKey, props, message.getBytes());
         Log.d(TAG, "路由-" + routingKey + "-发送消息=====" + message);
     }
 
@@ -149,30 +141,10 @@ public class RabbitMQClient {
      */
     public void receiveQueueMessage(final String queueName, final ResponseListener listener)
             throws IOException, TimeoutException, AlreadyClosedException {
-        if (connection == null || !connection.isOpen()) {
-            connection = factory.newConnection();
+        if (TextUtils.isEmpty(queueName)) {
+            throw new NullPointerException("队列名字不能为空");
         }
-
-        if (!channelMap.containsKey(FLAG_RECEIVE + queueName)) {
-            final Channel channel = connection.createChannel();
-
-            channel.queueDeclare(queueName, false, false, false, null);
-
-            channel.basicConsume(queueName, false, new DefaultConsumer(channel) {
-                @Override
-                public void handleDelivery(String consumerTag, Envelope envelope,
-                                           AMQP.BasicProperties properties, byte[] body)
-                        throws IOException {
-                    String message = new String(body, "UTF-8");
-                    if (listener != null) {
-                        listener.receive(message);
-                    }
-                    Log.d(TAG, "队列-" + queueName + "-接受消息---->" + message);
-                    channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
-                }
-            });
-            channelMap.put(FLAG_RECEIVE + queueName, channel);
-        }
+        receiveQueueRoutingKeyMessage(queueName, "", listener);
     }
 
     /**
@@ -181,19 +153,54 @@ public class RabbitMQClient {
      */
     public void receiveRoutingKeyMessage(final String routingKey, final ResponseListener listener)
             throws IOException, TimeoutException, AlreadyClosedException {
+        if (TextUtils.isEmpty(routingKey)) {
+            throw new NullPointerException("转换器路由不能设置为空");
+        }
+        receiveQueueRoutingKeyMessage("", routingKey, listener);
+    }
+
+    /**
+     * 对应发送：second,third
+     * 自定义默认非持久化转换器名称和类型，自定义队列，监听符合routingKey的消息，获取实时和缓存在队列中的消息
+     */
+    public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final ResponseListener listener)
+            throws IOException, TimeoutException, AlreadyClosedException {
+        if (TextUtils.isEmpty(EXCHANGE_NAME) && !exchangeTypeList.contains(EXCHANGE_TYPE)) {
+            throw new NullPointerException("请先设置默认转换器名称和正确类型，否则请调用指定转换器名称和类型的方法");
+        }
+        receiveQueueRoutingKeyMessage(queueName, routingKey, EXCHANGE_NAME, EXCHANGE_TYPE, listener);
+    }
+
+    /**
+     * 对应发送：second,third
+     * 自定义非持久化转换器名称和类型，自定义队列，监听符合routingKey的消息，获取实时和缓存在队列中的消息
+     */
+    public void receiveQueueRoutingKeyMessage(String queueName, final String routingKey, String exchangeName, String exchangeType, final ResponseListener listener)
+            throws IOException, TimeoutException, AlreadyClosedException {
+        if (!TextUtils.isEmpty(routingKey)) {
+            if (TextUtils.isEmpty(exchangeName) || exchangeTypeList.contains(exchangeType)) {
+                throw new NullPointerException("转换器名称不能为空并且转换器类型必须正确");
+            }
+        }
+
         if (connection == null || !connection.isOpen()) {
             connection = factory.newConnection();
         }
 
-        if (!channelMap.containsKey(FLAG_RECEIVE + routingKey)) {
+        if (!channelMap.containsKey(FLAG_RECEIVE + routingKey + queueName)) {
             final Channel channel = connection.createChannel();
-            if (TextUtils.isEmpty(EXCHANGE_NAME) && !exchangeTypeList.contains(EXCHANGE_TYPE)) {
-                throw new NullPointerException("请先设置默认转换器名称和正确类型，否则请调用指定转换器名称和类型的方法");
+            //自定义队列名称，还是匿名队列
+            if (TextUtils.isEmpty(queueName)) {
+                queueName = channel.queueDeclare().getQueue();
+            } else {
+                channel.queueDeclare(queueName, false, false, false, null);
             }
-            channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
-            String queueName = channel.queueDeclare().getQueue();
-            channel.queueBind(queueName, EXCHANGE_NAME, routingKey);
-
+            //绑定转换器，使用路由筛选消息
+            if (!TextUtils.isEmpty(routingKey)) {
+                channel.exchangeDeclare(exchangeName, exchangeType);
+                channel.queueBind(queueName, exchangeName, routingKey);  //设置绑定
+            }
+            //监听队列
             channel.basicConsume(queueName, false, new DefaultConsumer(channel) {
                 @Override
                 public void handleDelivery(String consumerTag, Envelope envelope,
@@ -204,79 +211,6 @@ public class RabbitMQClient {
                         listener.receive(message);
                     }
                     Log.d(TAG, "路由-" + routingKey + "-接受消息---->" + message);
-                    channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
-                }
-            });
-            channelMap.put(FLAG_RECEIVE + routingKey, channel);
-        }
-    }
-
-    /**
-     * 对应发送：second,third
-     * 自定义默认非持久化转换器名称和类型，自定义队列，监听符合routingKey的消息，获取实时和缓存在队列中的消息
-     */
-    public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, final ResponseListener listener)
-            throws IOException, TimeoutException, AlreadyClosedException {
-        if (connection == null || !connection.isOpen()) {
-            connection = factory.newConnection();
-        }
-
-        if (!channelMap.containsKey(FLAG_RECEIVE + routingKey + queueName)) {
-            final Channel channel = connection.createChannel();
-            if (TextUtils.isEmpty(EXCHANGE_NAME) && !exchangeTypeList.contains(EXCHANGE_TYPE)) {
-                throw new NullPointerException("请先设置默认转换器名称和正确类型，否则请调用指定转换器名称和类型的方法");
-            }
-            channel.exchangeDeclare(EXCHANGE_NAME, EXCHANGE_TYPE);
-            channel.queueDeclare(queueName, false, false, false, null);
-            channel.queueBind(queueName, EXCHANGE_NAME, routingKey);
-
-            channel.basicConsume(queueName, false, new DefaultConsumer(channel) {
-                @Override
-                public void handleDelivery(String consumerTag, Envelope envelope,
-                                           AMQP.BasicProperties properties, byte[] body)
-                        throws IOException {
-                    String message = new String(body, "UTF-8");
-                    if (listener != null) {
-                        listener.receive(message);
-                    }
-                    Log.d(TAG, "路由-" + routingKey + "-" + queueName + "-接受消息---->" + message);
-                    channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
-                }
-            });
-            channelMap.put(FLAG_RECEIVE + routingKey + queueName, channel);
-        }
-    }
-
-    /**
-     * 对应发送：second,third
-     * 自定义非持久化转换器名称和类型，自定义队列，监听符合routingKey的消息，获取实时和缓存在队列中的消息
-     */
-    public void receiveQueueRoutingKeyMessage(final String queueName, final String routingKey, String exchangeName, String exchangeType, final ResponseListener listener)
-            throws IOException, TimeoutException, AlreadyClosedException {
-        if (connection == null || !connection.isOpen()) {
-            connection = factory.newConnection();
-        }
-
-        if (!channelMap.containsKey(FLAG_RECEIVE + routingKey + queueName)) {
-            if (TextUtils.isEmpty(exchangeName) || exchangeTypeList.contains(exchangeType)) {
-                throw new NullPointerException("转换器名称不能为空并且转换器类型必须正确");
-            }
-
-            final Channel channel = connection.createChannel();
-            channel.exchangeDeclare(exchangeName, exchangeType);
-            channel.queueDeclare(queueName, false, false, false, null);
-            channel.queueBind(queueName, exchangeName, routingKey);  //设置绑定
-
-            channel.basicConsume(queueName, false, new DefaultConsumer(channel) {
-                @Override
-                public void handleDelivery(String consumerTag, Envelope envelope,
-                                           AMQP.BasicProperties properties, byte[] body)
-                        throws IOException {
-                    String message = new String(body, "UTF-8");
-                    if (listener != null) {
-                        listener.receive(message);
-                    }
-                    Log.d(TAG, "路由-" + routingKey + "-" + queueName + "-接受消息---->" + message);
                     channel.basicAck(envelope.getDeliveryTag(), false);  //消息应答
                 }
             });
